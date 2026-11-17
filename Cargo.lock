@@ -2458,12 +2458,14 @@ dependencies = [
 name = "filmcraft-embed"
 version = "0.20.1"
 dependencies = [
+ "cpal",
  "craft-embed",
  "eframe",
  "egui",
  "filmcraft-engine",
  "filmcraft-platform",
  "filmcraft-ui-egui",
+ "log",
  "serde_json",
 ]
 
