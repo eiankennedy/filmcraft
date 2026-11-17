@@ -21,4 +21,6 @@ egui = { workspace = true }
 # The desktop app's `eframe::App` impl is what this drives; `wgpu` for `Frame::wgpu_render_state`.
 eframe = { workspace = true, features = ["wgpu"] }
 serde_json = { workspace = true }
+cpal = "0.16"
+log = { workspace = true }
 craft-embed = { path = "../../../../crates/craft-embed" }

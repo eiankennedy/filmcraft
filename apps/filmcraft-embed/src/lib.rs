@@ -174,6 +174,11 @@ impl Film {
     }
 }
 
+// the desktop app's sound output (playback and scrubbing through the default device)
+#[path = "../../filmcraft/src/audio.rs"]
+#[allow(dead_code)]
+mod audio;
+
 fn make(ctx: &egui::Context) -> Box<dyn EmbedApp> {
     filmcraft_ui_egui::install_ime_reset_callbacks(ctx);
     // OS hardware video decoders (VideoToolbox) in front of FilmCraft's own, as on the desktop
@@ -183,6 +188,12 @@ fn make(ctx: &egui::Context) -> Box<dyn EmbedApp> {
     let mut app = FilmcraftApp::new(Session::default()).with_control(rx);
     // Workbench's look from the first frame; Workbench sets the mode's accent right after
     let _ = filmcraft_ui_egui::menus::invoke_command(&mut app, ctx, "view.workbench", json!({"on": true}));
+    // sound, as on the desktop (CRAFT_NO_AUDIO=1: none, for test runs)
+    if std::env::var_os("CRAFT_NO_AUDIO").is_none() {
+        app.audio = Some(Box::new(audio::CpalOut::new()));
+        let rate = app.session.active_sequence().map(|q| q.settings.sample_rate);
+        app.scrub_out = Some(Box::new(audio::CpalScrubOut::new(&app.session.prefs.audio_hardware, rate)));
+    }
     Box::new(Film { app, frame: eframe::Frame::_new_kittest(), queue, waiting: None })
 }
 
