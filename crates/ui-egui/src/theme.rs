@@ -4,9 +4,27 @@
 //! black-box screenshots, see `plan/premiere/02-ui-ux.md`); fonts are Inter + JetBrains Mono (OFL).
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use egui::{Color32, FontData, FontDefinitions, FontFamily, FontId, Stroke, TextStyle, Visuals};
 use serde::{Deserialize, Serialize};
+
+/// Workbench's look (dark, flat, its mode's accent) when FilmCraft runs inside Workbench's panel:
+/// 0 = off, else `0x01RRGGBB`. Set by the `view.workbench` command.
+static WORKBENCH: AtomicU32 = AtomicU32::new(0);
+
+/// Turn Workbench's look on with an accent colour, or off with `None`.
+pub fn set_workbench(accent: Option<Color32>) {
+    let v = accent.map_or(0, |c| 0x0100_0000 | (u32::from(c.r()) << 16) | (u32::from(c.g()) << 8) | u32::from(c.b()));
+    WORKBENCH.store(v, Ordering::Relaxed);
+}
+
+/// The accent Workbench set, when its look is on.
+pub fn workbench_accent() -> Option<Color32> {
+    let v = WORKBENCH.load(Ordering::Relaxed);
+    let [_, r, g, b] = v.to_be_bytes();
+    (v != 0).then(|| Color32::from_rgb(r, g, b))
+}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ThemeKind {
@@ -150,7 +168,16 @@ pub struct Tokens {
 }
 
 impl Tokens {
+    /// Theme `kind`, or Workbench's palette while its look is on.
     pub fn for_kind(kind: ThemeKind) -> Self {
+        match workbench_accent() {
+            Some(accent) => Self::workbench(accent),
+            None => Self::builtin(kind),
+        }
+    }
+
+    /// The app's own theme `kind`.
+    fn builtin(kind: ThemeKind) -> Self {
         // Measured from Premiere 26 "Darkest" (plan/premiere/02-ui-ux.md §1).
         let dark = Tokens {
             kind,
@@ -333,10 +360,80 @@ impl Tokens {
         }
     }
 
+    /// Workbench's palette: near-black surfaces, hairline borders, warm white text, square corners and
+    /// its mode's accent wherever the theme uses its highlight.
+    pub fn workbench(accent: Color32) -> Self {
+        let surface = Color32::from_rgb(0x12, 0x13, 0x16);
+        let raised = Color32::from_rgb(0x18, 0x19, 0x1C);
+        let sunk = Color32::from_rgb(0x06, 0x06, 0x07);
+        let hairline = Color32::from_rgb(0x33, 0x34, 0x36);
+        let text = Color32::from_rgb(0xF2, 0xF1, 0xEE);
+        let dim = Color32::from_rgb(0x98, 0x99, 0x98);
+        let faint = Color32::from_rgb(0x83, 0x84, 0x85);
+        let hover = Color32::from_rgb(0x1C, 0x1D, 0x20);
+        let pressed = Color32::from_rgb(0x26, 0x27, 0x2A);
+        let [r, g, b, _] = accent.to_array();
+        let lift = |v: u8| v.saturating_add(16);
+        let deep = Color32::from_rgb((u16::from(r) * 7 / 8) as u8, (u16::from(g) * 7 / 8) as u8, (u16::from(b) * 7 / 8) as u8);
+        Tokens {
+            kind: ThemeKind::Dark,
+            app_bg: sunk,
+            header_bg: surface,
+            panel_bg: surface,
+            tab_bg: surface,
+            tab_text: dim,
+            tab_text_active: text,
+            focus: accent,
+            accent,
+            accent_hover: Color32::from_rgb(lift(r), lift(g), lift(b)),
+            text,
+            text_dim: dim,
+            text_faint: faint,
+            icon: dim,
+            icon_active: text,
+            hover,
+            pressed,
+            field_bg: sunk,
+            field_border: hairline,
+            separator: hairline,
+            row_alt: raised,
+            row_selected: pressed,
+            hot_text: accent,
+            pill_active_bg: pressed,
+            control_surface: raised,
+            control_well: sunk,
+            control_border: hairline,
+            control_handle_bg: pressed,
+            plot_bg: raised,
+            plot_grid: hairline,
+            meter_readout_bg: raised,
+            keyframe_plot_bg: raised,
+            keyframe_plot_grid: hairline,
+            button_hover: hover,
+            button_border: hairline,
+            tl_bg: surface,
+            tl_track_bg: surface,
+            tl_track_bg_alt: surface,
+            tl_header_bg: surface,
+            tl_ruler_bg: surface,
+            playhead: accent,
+            track_target: deep,
+            monitor_bg: sunk,
+            timecode: accent,
+            radius: 0.0,
+            radius_sm: 0.0,
+            ..Self::builtin(ThemeKind::Dark)
+        }
+    }
+
     /// Settings ▸ Appearance on top of a theme: the highlight colour (selections, primary buttons,
     /// the focus outline, the playhead, timecodes, drag values and track targeting) and accessible
     /// colour contrast (brighter secondary text and borders).
     pub fn with_appearance(mut self, highlight: Option<[u8; 3]>, accessible_contrast: bool) -> Self {
+        // inside Workbench its mode's colour is the highlight
+        if workbench_accent().is_some() {
+            return self;
+        }
         if let Some([r, g, b]) = highlight {
             let c = Color32::from_rgb(r, g, b);
             // A highlight of the user's own also colours the theme's other blues: the same hue, as
@@ -472,8 +569,9 @@ pub fn apply_visuals(ctx: &egui::Context, t: &Tokens) {
     v.selection.stroke = Stroke::new(1.0, Color32::WHITE);
     v.hyperlink_color = t.accent;
     v.window_stroke = Stroke::new(1.0, t.field_border);
-    v.window_corner_radius = egui::CornerRadius::same(6);
-    v.menu_corner_radius = egui::CornerRadius::same(6);
+    let flat = workbench_accent().is_some(); // Workbench is square-cornered
+    v.window_corner_radius = egui::CornerRadius::same(if flat { 0 } else { 6 });
+    v.menu_corner_radius = egui::CornerRadius::same(if flat { 0 } else { 6 });
     v.popup_shadow = egui::epaint::Shadow { offset: [0, 4], blur: 16, spread: 0, color: Color32::from_black_alpha(140) };
     v.window_shadow = v.popup_shadow;
     for w in [&mut v.widgets.noninteractive, &mut v.widgets.inactive, &mut v.widgets.hovered, &mut v.widgets.active, &mut v.widgets.open] {
@@ -520,6 +618,20 @@ mod tests {
     use super::*;
 
     const JAPANESE: &str = "日本語の文字";
+
+    /// Workbench's palette: its surfaces, hairlines and text, square corners, and its mode's colour
+    /// wherever the theme uses its highlight.
+    #[test]
+    fn workbench_palette_uses_the_mode_colour_and_square_corners() {
+        let accent = Color32::from_rgb(0x12, 0xA0, 0x5C);
+        let t = Tokens::workbench(accent);
+        assert_eq!(t.panel_bg, Color32::from_rgb(0x12, 0x13, 0x16));
+        assert_eq!(t.app_bg, Color32::from_rgb(0x06, 0x06, 0x07));
+        assert_eq!(t.separator, Color32::from_rgb(0x33, 0x34, 0x36));
+        assert_eq!(t.text, Color32::from_rgb(0xF2, 0xF1, 0xEE));
+        assert_eq!((t.accent, t.focus, t.playhead, t.timecode), (accent, accent, accent, accent));
+        assert_eq!((t.radius, t.radius_sm), (0.0, 0.0));
+    }
 
     fn installed() -> egui::Context {
         let ctx = egui::Context::default();

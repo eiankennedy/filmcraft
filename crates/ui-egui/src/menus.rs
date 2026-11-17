@@ -61,6 +61,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     uic!("view.zoomOut", "Zoom Out", ["View"], Some("-")),
     uic!("view.zoomToSequence", "Zoom to Sequence", ["View"], Some("\\")),
     uic!("view.resetInterfaceZoom", "Reset Interface Zoom", ["View"], None),
+    uic!("view.workbench", "Workbench Look", [], None),
     uic!("view.playbackRes.full", "Full", ["View", "Playback Resolution"], None),
     uic!("view.playbackRes.half", "1/2", ["View", "Playback Resolution"], None),
     uic!("view.playbackRes.quarter", "1/4", ["View", "Playback Resolution"], None),
@@ -493,6 +494,23 @@ pub fn invoke_command(app: &mut FilmcraftApp, ctx: &egui::Context, id: &str, mut
         "view.resetInterfaceZoom" => {
             let zoom = app.reset_ui_zoom(ctx);
             return Ok(json!({"zoom": zoom}));
+        }
+        // Workbench's look (its palette, square corners, its mode's colour as the accent) while
+        // FilmCraft runs inside Workbench's panel: `{on?, accent?: "#rrggbb"}`
+        "view.workbench" => {
+            let was = crate::theme::workbench_accent();
+            let on = params.get("on").and_then(Value::as_bool).unwrap_or(was.is_none());
+            let accent = params
+                .get("accent")
+                .and_then(Value::as_str)
+                .and_then(filmcraft_engine::settings::parse_hex)
+                .map(|[r, g, b]| egui::Color32::from_rgb(r, g, b))
+                .or(was)
+                .unwrap_or(egui::Color32::from_rgb(0xFF, 0x60, 0x00));
+            crate::theme::set_workbench(on.then_some(accent));
+            let kind = app.appearance_kind(ctx);
+            app.set_theme(ctx, kind);
+            return Ok(json!({"on": on}));
         }
         "mode.import" => {
             app.ui.mode = Mode::Import;
