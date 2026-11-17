@@ -42,6 +42,9 @@ impl EmbedApp for Film {
         let req: Value = serde_json::from_str(request).unwrap_or(Value::Null);
         let method = req.get("method").and_then(Value::as_str).unwrap_or("");
         let params = req.get("params").cloned().unwrap_or(json!({}));
+        if hands_off(method, &params) {
+            return json!({"ok": true, "result": {"on": false}}).to_string();
+        }
         self.request(ctx, method, params).to_string()
     }
     fn settle(&mut self) -> Option<String> {
@@ -195,6 +198,13 @@ fn make(ctx: &egui::Context) -> Box<dyn EmbedApp> {
         app.scrub_out = Some(Box::new(audio::CpalScrubOut::new(&app.session.prefs.audio_hardware, rate)));
     }
     Box::new(Film { app, frame: eframe::Frame::_new_kittest(), queue, waiting: None })
+}
+
+/// Whether a request is `view.handsOff`: a video editor has no Hands off (E's rule), so the panel takes the call
+/// and nothing changes.
+fn hands_off(method: &str, params: &Value) -> bool {
+    let command = params.get("command").or_else(|| params.get("id")).and_then(Value::as_str);
+    method == "view.handsOff" || (matches!(method, "engine.execute" | "command" | "ui.command") && command == Some("view.handsOff"))
 }
 
 craft_embed::export_embed!(make);
