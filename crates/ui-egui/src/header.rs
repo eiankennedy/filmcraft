@@ -126,17 +126,10 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
     let wresp = ui.interact(wr, egui::Id::unique("hdr-ws-name"), Sense::click());
     app.auto.add("header.workspaceName", wr, &ws);
     p.galley_with_override_text_color(pos2(wr.min.x + 4.0, rect.center().y - wg.size().y / 2.0), wg, if wresp.hovered() { t.text } else { t.text_dim });
-    // Community: a labelled Discord button, always one click away.
+    // Community: a labelled Discord button, always one click away (not in Workbench's panel, where the
+    // menus need the room)
     {
-        let label = "Discord";
-        let g = p.layout_no_wrap(label.to_string(), Tokens::ui(12.0), Color32::WHITE);
-        let w = g.size().x + 34.0;
-        let r = Rect::from_min_size(pos2(wr.min.x - w - 14.0, rect.center().y - 12.0), vec2(w, 24.0));
-        let resp = ui.interact(r, egui::Id::unique("hdr-discord"), Sense::click()).on_hover_text(tl!("Join the ArtCraft Discord (discord.gg/artcraft)"));
-        app.auto.add("header.discord", r, "Join the ArtCraft Discord");
-        ui.painter().rect_filled(r, 12.0, if resp.hovered() { t.accent_hover } else { t.accent });
-        icons::paint(ui.painter(), Rect::from_center_size(pos2(r.min.x + 14.0, r.center().y), vec2(14.0, 14.0)), Icon::Chat, Color32::WHITE);
-        ui.painter().galley(pos2(r.min.x + 25.0, r.center().y - g.size().y / 2.0), g, Color32::WHITE);
+        let (r, resp) = discord_button(app, ui, &p, &t, rect, wr);
         // Localized menus and user titles can be wider than English. Use the actual gap.
         let left = left_end + 12.0;
         let right = r.min.x - 12.0;
@@ -154,7 +147,7 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
             );
         }
 
-        if resp.clicked() {
+        if resp.is_some_and(|r| r.clicked()) {
             crate::links::open(app, ui.ctx(), crate::links::DISCORD);
         }
     }
@@ -214,4 +207,22 @@ mod tests {
         crate::i18n::set_current(crate::i18n::Language::En);
         assert_eq!(crate::i18n::to_uppercase("Birleştirme"), "BIRLEŞTIRME");
     }
+}
+
+/// The labelled Discord button left of the workspace name: its rect (empty in Workbench's panel, where the menus
+/// need the room and it isn't drawn) and its response when drawn.
+fn discord_button(app: &mut FilmcraftApp, ui: &mut egui::Ui, p: &egui::Painter, t: &Tokens, rect: Rect, wr: Rect) -> (Rect, Option<egui::Response>) {
+    if crate::theme::workbench_accent().is_some() {
+        return (Rect::from_min_size(pos2(wr.min.x - 2.0, rect.center().y - 12.0), vec2(0.0, 24.0)), None);
+    }
+    let label = "Discord";
+    let g = p.layout_no_wrap(label.to_string(), Tokens::ui(12.0), Color32::WHITE);
+    let w = g.size().x + 34.0;
+    let r = Rect::from_min_size(pos2(wr.min.x - w - 14.0, rect.center().y - 12.0), vec2(w, 24.0));
+    let resp = ui.interact(r, egui::Id::unique("hdr-discord"), Sense::click()).on_hover_text(tl!("Join the ArtCraft Discord (discord.gg/artcraft)"));
+    app.auto.add("header.discord", r, "Join the ArtCraft Discord");
+    ui.painter().rect_filled(r, 12.0, if resp.hovered() { t.accent_hover } else { t.accent });
+    icons::paint(ui.painter(), Rect::from_center_size(pos2(r.min.x + 14.0, r.center().y), vec2(14.0, 14.0)), Icon::Chat, Color32::WHITE);
+    ui.painter().galley(pos2(r.min.x + 25.0, r.center().y - g.size().y / 2.0), g, Color32::WHITE);
+    (r, Some(resp))
 }
